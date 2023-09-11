@@ -13,14 +13,13 @@ var (
 type Action func() (interface{}, error)
 
 type CircuitBreaker struct {
-	count      int
-	state      State
-	hsCounter  int
-	hsReq      int
-	threshold  int
-	goodReqs   int
-	NotifyFunc func(s int)
-	duration   time.Duration
+	count       int
+	state       State
+	hsThreshold int
+	threshold   int
+	goodReqs    int
+	NotifyFunc  func(s int)
+	duration    time.Duration
 }
 
 func New() *CircuitBreaker {
@@ -49,7 +48,7 @@ func (cb *CircuitBreaker) RunInHalfState(fn Action) (interface{}, error) {
 		return res, err
 	}
 	cb.goodReqs++
-	if cb.goodReqs >= cb.threshold/10 {
+	if cb.goodReqs >= cb.hsThreshold {
 		cb.CloseCircuit()
 	}
 	return res, err
@@ -68,6 +67,7 @@ func (cb *CircuitBreaker) Run(fn Action) (interface{}, error) {
 
 func (cb *CircuitBreaker) CloseCircuit() {
 	cb.state = Closed
+	cb.goodReqs = 0
 	go cb.NotifyFunc(0)
 
 }
