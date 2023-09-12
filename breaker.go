@@ -26,10 +26,11 @@ type CircuitBreaker struct {
 func New(n func(s int)) *CircuitBreaker {
 
 	return &CircuitBreaker{
-		state:      Closed,
-		threshold:  10,
-		duration:   5 * time.Second,
-		NotifyFunc: n,
+		state:       Closed,
+		threshold:   10,
+		duration:    1 * time.Second,
+		NotifyFunc:  n,
+		hsThreshold: 5,
 	}
 }
 
@@ -41,7 +42,6 @@ func (cb *CircuitBreaker) Execute(ctx context.Context, fn Action) (interface{}, 
 
 		return cb.Run(fn)
 	case Open:
-		fmt.Println("State", cb.state)
 		return nil, ErrCircuitOpen
 	case Half:
 		return cb.RunInHalfState(fn)
@@ -83,7 +83,9 @@ func (cb *CircuitBreaker) CloseCircuit() {
 
 func (cb *CircuitBreaker) OpenCircuit() {
 	cb.state = Open
-	go cb.NotifyFunc(2)
+	fmt.Println("Being called or not ?????")
+	fmt.Println(cb.state)
+	go cb.NotifyFunc(0)
 	time.Sleep(cb.duration)
 	cb.goodReqs = 0
 	cb.state = Half
@@ -91,14 +93,6 @@ func (cb *CircuitBreaker) OpenCircuit() {
 
 }
 
-func (cb *CircuitBreaker) ReturnState() int {
-	switch cb.state {
-	case Open:
-		return 2
-	case Half:
-		return 1
-	case Closed:
-		return 0
-	}
-	return -1
+func (cb *CircuitBreaker) ReturnState() State {
+	return cb.state
 }
