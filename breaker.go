@@ -3,6 +3,7 @@ package cbreak
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -22,22 +23,30 @@ type CircuitBreaker struct {
 	duration    time.Duration
 }
 
-func New() *CircuitBreaker {
-	return &CircuitBreaker{threshold: 10}
+func New(n func(s int)) *CircuitBreaker {
+
+	return &CircuitBreaker{
+		state:      Closed,
+		threshold:  10,
+		duration:   5 * time.Second,
+		NotifyFunc: n,
+	}
 }
 
 func (cb *CircuitBreaker) Execute(ctx context.Context, fn Action) (interface{}, error) {
 	// Execute the function
+
 	switch cb.state {
 	case Closed:
-		cb.state = Open
-		return nil, ErrCircuitOpen
+
+		return cb.Run(fn)
 	case Open:
+		fmt.Println("State", cb.state)
 		return nil, ErrCircuitOpen
 	case Half:
 		return cb.RunInHalfState(fn)
 	}
-	return nil, nil
+	return cb.Run(fn)
 }
 
 func (cb *CircuitBreaker) RunInHalfState(fn Action) (interface{}, error) {
@@ -60,7 +69,7 @@ func (cb *CircuitBreaker) Run(fn Action) (interface{}, error) {
 		cb.count++
 	}
 	if cb.count >= cb.threshold {
-		cb.OpenCircuit()
+		go cb.OpenCircuit()
 	}
 	return res, err
 }
@@ -68,15 +77,28 @@ func (cb *CircuitBreaker) Run(fn Action) (interface{}, error) {
 func (cb *CircuitBreaker) CloseCircuit() {
 	cb.state = Closed
 	cb.goodReqs = 0
-	go cb.NotifyFunc(0)
+	go cb.NotifyFunc(2)
 
 }
 
 func (cb *CircuitBreaker) OpenCircuit() {
 	cb.state = Open
+	go cb.NotifyFunc(2)
 	time.Sleep(cb.duration)
 	cb.goodReqs = 0
 	cb.state = Half
 	go cb.NotifyFunc(1)
 
+}
+
+func (cb *CircuitBreaker) ReturnState() int {
+	switch cb.state {
+	case Open:
+		return 2
+	case Half:
+		return 1
+	case Closed:
+		return 0
+	}
+	return -1
 }
