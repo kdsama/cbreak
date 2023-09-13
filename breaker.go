@@ -9,92 +9,136 @@ import (
 )
 
 var (
+	//ErrCircuitOpen is returned on function calls during Open Circuit State
 	ErrCircuitOpen = errors.New("circuit open")
 )
 
 type Action func() (interface{}, error)
 
-type CircuitBreaker struct {
-	count int
+// CircuitBreakerOpts is the option Configuration struct
+type CircuitBreakerOpts struct {
+	// Number of errors past which the circuit breaker will open
+	Threshold uint
 
-	sLock       *sync.Mutex
-	state       State
+	//
+	// value from 1 to 99. When HsThresholdPercentage of good requests is reached in half state , circuit is closed
+	// any input below 1 will be set to 1 and value above 99 will be set to 99
+	HsThresholdPercentage uint
+
+	// Function passed with this signature will be called whenever a state is changed.
+	NotifyFunc func(s int)
+
+	//Sleep time after which OpenCircuit switches to Half-Open.
+	Duration time.Duration
+}
+
+type CircuitBreaker struct {
+	count       int
 	hsThreshold int
 	threshold   int
 	goodReqs    int
-	NotifyFunc  func(s int)
-	r           uint32
-	duration    time.Duration
+
+	// lock for state and good requests
+	sLock *sync.Mutex
+	state State
+
+	notifyFunc func(s int)
+	r          uint32
+	duration   time.Duration
 }
 
-func New(n func(s int)) *CircuitBreaker {
-
+func New(opts CircuitBreakerOpts) *CircuitBreaker {
+	if opts.Threshold < 1 {
+		opts.Threshold = 1
+	}
+	if opts.HsThresholdPercentage > 99 {
+		opts.HsThresholdPercentage = 99
+	}
+	if opts.HsThresholdPercentage < 1 {
+		opts.HsThresholdPercentage = 1
+	}
 	return &CircuitBreaker{
 		state:       Closed,
 		sLock:       &sync.Mutex{},
-		threshold:   10,
-		duration:    1 * time.Second,
-		NotifyFunc:  n,
-		hsThreshold: 5,
+		threshold:   int(opts.Threshold),
+		duration:    opts.Duration,
+		notifyFunc:  opts.NotifyFunc,
+		hsThreshold: int(opts.HsThresholdPercentage),
 	}
 }
 
+// Execute executes the user defined function in the circuit breaker
 func (cb *CircuitBreaker) Execute(ctx context.Context, fn Action) (interface{}, error) {
 	// Execute the function
 	var state State
+
 	cb.sLock.Lock()
-
 	state = cb.state
-
 	cb.sLock.Unlock()
+
 	switch state {
 	case Closed:
 
-		return cb.Run(fn)
+		return cb.run(fn)
 	case Open:
 		return nil, ErrCircuitOpen
 	case Half:
-		return cb.RunInHalfState(fn)
+		return cb.runInHalfState(fn)
 	}
-	return cb.Run(fn)
+	return cb.run(fn)
 }
 
-func (cb *CircuitBreaker) RunInHalfState(fn Action) (interface{}, error) {
+// GetState returns current state of the circuit breaker. 0 -> Open, 1 -> Half, 2 -> Closed
+func (cb *CircuitBreaker) GetState() State {
+	var state State
+
+	cb.sLock.Lock()
+	state = cb.state
+	cb.sLock.Unlock()
+
+	return state
+}
+
+func (cb *CircuitBreaker) runInHalfState(fn Action) (interface{}, error) {
 
 	res, err := fn()
 	if err != nil {
-		cb.OpenCircuit()
+		cb.openCircuit()
 		return res, err
 	}
+
 	cb.goodReqs++
-	if cb.goodReqs >= cb.hsThreshold {
-		cb.CloseCircuit()
+
+	if cb.goodReqs >= (cb.hsThreshold*cb.threshold)/100 {
+		cb.closeCircuit()
 	}
 	return res, err
 }
-func (cb *CircuitBreaker) Run(fn Action) (interface{}, error) {
+func (cb *CircuitBreaker) run(fn Action) (interface{}, error) {
 
 	res, err := fn()
 	if err != nil {
 		cb.count++
 	}
 	if cb.count >= cb.threshold {
-		go cb.OpenCircuit()
+		go cb.openCircuit()
 	}
 	return res, err
 }
 
-func (cb *CircuitBreaker) CloseCircuit() {
-	cb.SetState(Closed)
+func (cb *CircuitBreaker) closeCircuit() {
+	cb.setState(Closed)
 
 }
 
-func (cb *CircuitBreaker) OpenCircuit() {
-	cb.SetState(Open)
-	go cb.HalfCircuit()
+func (cb *CircuitBreaker) openCircuit() {
+	cb.setState(Open)
+	go cb.halfCircuit()
 
 }
-func (cb *CircuitBreaker) HalfCircuit() {
+func (cb *CircuitBreaker) halfCircuit() {
+	// If value of r is not same after the sleep, means a new goroutine has been invoked.
+	//Hence we dont need to set state anymore
 	atomic.AddUint32(&cb.r, 1)
 	a := cb.r
 	time.Sleep(cb.duration)
@@ -102,23 +146,18 @@ func (cb *CircuitBreaker) HalfCircuit() {
 		return
 	}
 
-	cb.SetState(Half)
+	cb.setState(Half)
 }
 
-func (cb *CircuitBreaker) SetState(st State) {
+func (cb *CircuitBreaker) setState(st State) {
 
 	cb.sLock.Lock()
 	cb.goodReqs = 0
+	cb.count = 0
 	cb.state = st
 	cb.sLock.Unlock()
-	go cb.NotifyFunc(stateMapping[st])
 
-}
+	//Notify the userDefined Function
+	go cb.notifyFunc(stateMapping[st])
 
-func (cb *CircuitBreaker) ReturnState() State {
-	var state State
-	cb.sLock.Lock()
-	state = cb.state
-	cb.sLock.Unlock()
-	return state
 }

@@ -3,7 +3,6 @@ package cbreak
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 	"time"
 )
@@ -34,7 +33,12 @@ func ChangeState(s int) {
 }
 func TestExecuteOpenToHalf(t *testing.T) {
 	t.Parallel()
-	cb := New(ChangeState)
+	cb := New(CircuitBreakerOpts{
+		Threshold:             10,
+		NotifyFunc:            ChangeState,
+		HsThresholdPercentage: 5,
+		Duration:              1 * time.Second,
+	})
 	m := M{}
 	for i := 0; i < 21; i++ {
 		time.Sleep(1 * time.Millisecond)
@@ -48,14 +52,14 @@ func TestExecuteOpenToHalf(t *testing.T) {
 		})
 	}
 	want := Open
-	got := cb.ReturnState()
+	got := cb.GetState()
 	if want != got {
 		t.Errorf("Want %d, but got %d", want, got)
 	}
 	time.Sleep(1 * time.Second)
 	// The state should have changed to halfState
 	want = Half
-	got = cb.ReturnState()
+	got = cb.GetState()
 	if want != got {
 		t.Errorf("Want %d, but got %d", want, got)
 	}
@@ -64,7 +68,12 @@ func TestExecuteOpenToHalf(t *testing.T) {
 
 func TestExecuteHalfToClosed(t *testing.T) {
 	t.Parallel()
-	cb := New(ChangeState)
+	cb := New(CircuitBreakerOpts{
+		Threshold:             10,
+		NotifyFunc:            ChangeState,
+		HsThresholdPercentage: 50,
+		Duration:              1 * time.Second,
+	})
 	m := M{}
 	for i := 0; i < 21; i++ {
 		time.Sleep(1 * time.Millisecond)
@@ -90,7 +99,7 @@ func TestExecuteHalfToClosed(t *testing.T) {
 		})
 	}
 	want := Closed
-	got := cb.ReturnState()
+	got := cb.GetState()
 	if want != got {
 		t.Errorf("Want %d, but got %d", want, got)
 	}
@@ -99,7 +108,12 @@ func TestExecuteHalfToClosed(t *testing.T) {
 
 func TestExecuteHalfToOpen(t *testing.T) {
 	t.Parallel()
-	cb := New(ChangeState)
+	cb := New(CircuitBreakerOpts{
+		Threshold:             10,
+		NotifyFunc:            ChangeState,
+		HsThresholdPercentage: 50,
+		Duration:              1 * time.Second,
+	})
 	m := M{true, 0}
 	for i := 0; i < 21; i++ {
 		time.Sleep(10 * time.Millisecond)
@@ -114,7 +128,6 @@ func TestExecuteHalfToOpen(t *testing.T) {
 	}
 	// changes state to half state
 	time.Sleep(2 * time.Second)
-	fmt.Println("State now is ", cb.ReturnState())
 	for i := 0; i < 5; i++ {
 		cb.Execute(context.Background(), func() (interface{}, error) {
 
@@ -126,7 +139,7 @@ func TestExecuteHalfToOpen(t *testing.T) {
 		})
 	}
 	want := Open
-	got := cb.ReturnState()
+	got := cb.GetState()
 	if want != got {
 		t.Errorf("Want %v, but got %v", want, got)
 	}
