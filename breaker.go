@@ -101,6 +101,7 @@ func (cb *CircuitBreaker) HalfCircuit() {
 	if a != cb.r {
 		return
 	}
+
 	cb.SetState(Half)
 }
 

@@ -30,6 +30,7 @@ func (m *M) Func() string {
 	return "cool"
 }
 func ChangeState(s int) {
+
 }
 func TestExecuteOpenToHalf(t *testing.T) {
 	t.Parallel()
@@ -125,7 +126,6 @@ func TestExecuteHalfToOpen(t *testing.T) {
 		})
 	}
 	want := Open
-	time.Sleep(1 * time.Second)
 	got := cb.ReturnState()
 	if want != got {
 		t.Errorf("Want %v, but got %v", want, got)
