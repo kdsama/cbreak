@@ -3,6 +3,7 @@ package cbreak
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -12,6 +13,9 @@ type M struct {
 	count int
 }
 
+func (m *M) DiffFunc() string {
+	return "not ok"
+}
 func (m *M) Func() string {
 	m.count++
 	if m.count%2 == 0 {
@@ -109,14 +113,11 @@ func TestExecuteHalfToOpen(t *testing.T) {
 	}
 	// changes state to half state
 	time.Sleep(2 * time.Second)
-
+	fmt.Println("State now is ", cb.ReturnState())
 	for i := 0; i < 5; i++ {
 		cb.Execute(context.Background(), func() (interface{}, error) {
 
-			l := m.Func()
-			if i == 3 {
-				return "", errors.New("Some error")
-			}
+			l := m.DiffFunc()
 			if l != "cool" {
 				return "", errors.New("WTF")
 			}
@@ -124,6 +125,7 @@ func TestExecuteHalfToOpen(t *testing.T) {
 		})
 	}
 	want := Open
+	time.Sleep(1 * time.Second)
 	got := cb.ReturnState()
 	if want != got {
 		t.Errorf("Want %v, but got %v", want, got)

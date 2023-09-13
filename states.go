@@ -7,3 +7,11 @@ const (
 	Half
 	Closed
 )
+
+var (
+	stateMapping = map[State]int{
+		Open:   0,
+		Half:   1,
+		Closed: 2,
+	}
+)

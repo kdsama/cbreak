@@ -3,7 +3,8 @@ package cbreak
 import (
 	"context"
 	"errors"
-	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -14,12 +15,15 @@ var (
 type Action func() (interface{}, error)
 
 type CircuitBreaker struct {
-	count       int
+	count int
+
+	sLock       *sync.Mutex
 	state       State
 	hsThreshold int
 	threshold   int
 	goodReqs    int
 	NotifyFunc  func(s int)
+	r           uint32
 	duration    time.Duration
 }
 
@@ -27,6 +31,7 @@ func New(n func(s int)) *CircuitBreaker {
 
 	return &CircuitBreaker{
 		state:       Closed,
+		sLock:       &sync.Mutex{},
 		threshold:   10,
 		duration:    1 * time.Second,
 		NotifyFunc:  n,
@@ -36,8 +41,13 @@ func New(n func(s int)) *CircuitBreaker {
 
 func (cb *CircuitBreaker) Execute(ctx context.Context, fn Action) (interface{}, error) {
 	// Execute the function
+	var state State
+	cb.sLock.Lock()
 
-	switch cb.state {
+	state = cb.state
+
+	cb.sLock.Unlock()
+	switch state {
 	case Closed:
 
 		return cb.Run(fn)
@@ -53,7 +63,7 @@ func (cb *CircuitBreaker) RunInHalfState(fn Action) (interface{}, error) {
 
 	res, err := fn()
 	if err != nil {
-		go cb.OpenCircuit()
+		cb.OpenCircuit()
 		return res, err
 	}
 	cb.goodReqs++
@@ -75,24 +85,39 @@ func (cb *CircuitBreaker) Run(fn Action) (interface{}, error) {
 }
 
 func (cb *CircuitBreaker) CloseCircuit() {
-	cb.state = Closed
-	cb.goodReqs = 0
-	go cb.NotifyFunc(2)
+	cb.SetState(Closed)
 
 }
 
 func (cb *CircuitBreaker) OpenCircuit() {
-	cb.state = Open
-	fmt.Println("Being called or not ?????")
-	fmt.Println(cb.state)
-	go cb.NotifyFunc(0)
+	cb.SetState(Open)
+	go cb.HalfCircuit()
+
+}
+func (cb *CircuitBreaker) HalfCircuit() {
+	atomic.AddUint32(&cb.r, 1)
+	a := cb.r
 	time.Sleep(cb.duration)
+	if a != cb.r {
+		return
+	}
+	cb.SetState(Half)
+}
+
+func (cb *CircuitBreaker) SetState(st State) {
+
+	cb.sLock.Lock()
 	cb.goodReqs = 0
-	cb.state = Half
-	go cb.NotifyFunc(1)
+	cb.state = st
+	cb.sLock.Unlock()
+	go cb.NotifyFunc(stateMapping[st])
 
 }
 
 func (cb *CircuitBreaker) ReturnState() State {
-	return cb.state
+	var state State
+	cb.sLock.Lock()
+	state = cb.state
+	cb.sLock.Unlock()
+	return state
 }
