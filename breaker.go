@@ -13,6 +13,7 @@ var (
 	ErrCircuitOpen = errors.New("circuit open")
 )
 
+// Action is the signature used inside Execute function that runs the circuitBreaker.
 type Action func() (interface{}, error)
 
 // CircuitBreakerOpts is the option Configuration struct
@@ -32,6 +33,7 @@ type CircuitBreakerOpts struct {
 	Duration time.Duration
 }
 
+// CircuitBreaker is the main struct of the project
 type CircuitBreaker struct {
 	count       int
 	hsThreshold int
@@ -47,6 +49,7 @@ type CircuitBreaker struct {
 	duration   time.Duration
 }
 
+// New initiate a new CircuitBreaker Object.
 func New(opts CircuitBreakerOpts) *CircuitBreaker {
 	if opts.Threshold < 1 {
 		opts.Threshold = 1

@@ -1,10 +1,14 @@
 package cbreak
 
+// State type which tells which state the circuitbreaker is int
 type State byte
 
 const (
+	//Open State
 	Open State = iota
+	//Half Open State
 	Half
+	//Closed State
 	Closed
 )
 
